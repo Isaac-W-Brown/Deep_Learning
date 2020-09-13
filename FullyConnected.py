@@ -1,12 +1,14 @@
 import numpy as np
 from scipy.special import expit
 import pickle   # For retrieving training data
-import os   # For changing file directory
-os.chdir("c://Users/isaac/Documents/PycharmProjects")
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
+from scipy import interpolate
+import os   # For changing file directory
+os.chdir("c://Users/isaac/Documents/PycharmProjects")
 
 
+# Performs forward and backpropagation on a batch of images
 def batch_fwd_backprop(weights, biases, inputs, l, y):
 
     y = y.T    # Transpose real vector
@@ -58,7 +60,7 @@ def batch_fwd_backprop(weights, biases, inputs, l, y):
 
 
 # Adam optimiser
-def adam(params, derivs, ms, vs, it):
+def adam_optimise(params, derivs, ms, vs, it):
     i = 0
     for a, b in zip(params, derivs):
 
@@ -76,6 +78,30 @@ def adam(params, derivs, ms, vs, it):
         i += 1
 
 
+# Elastically distorts image to create new training data
+def elastic_distortion(image):
+
+    # Create random filtered arrays and adds to square grid
+    x_random_array = ELASTIC_U_RANGE * (np.random.rand(28, 28) - 0.5)
+    x_smoothed_array = gaussian_filter(x_random_array, sigma=ELASTIC_SIGMA)
+    xs = np.array([np.arange(28), ] * 28) + x_smoothed_array
+    y_random_array = ELASTIC_U_RANGE * (np.random.rand(28, 28) - 0.5)
+    y_smoothed_array = gaussian_filter(y_random_array, sigma=ELASTIC_SIGMA)
+    ys = np.array([np.arange(28), ] * 28) + y_smoothed_array
+
+    # Interpolate known image with random points to produce new image
+    x = y = np.arange(28)
+    f = interpolate.RectBivariateSpline(x, y, image.reshape(28, 28))
+    image = np.array(f.ev(ys, xs))
+
+    # Normalise new image
+    image[image < 0] = 0
+    image -= np.min(image)
+    image *= 1/np.max(image)
+
+    return image
+
+
 # Imports training data
 infile = open("EMNIST Training Data", "rb" )
 training_data = pickle.load(infile)
@@ -91,7 +117,10 @@ BATCH_SIZE = 64   # Batch size
 B1 = 0.9   # Momentum coefficient
 B2 = 0.999   # Second moment coefficient
 EPS = 10 ** -8   # Small number to prevent division error
-ADAM = True
+adam = True
+elastic = False
+ELASTIC_U_RANGE = 3
+ELASTIC_SIGMA = 18
 
 # Initialization
 figure_1, ax_1 = plt.subplots(1)
@@ -109,6 +138,8 @@ vbs = [0] * (l-1)   # Bias second moments
 
 # Main loop
 it = 0
+print("iteration |  cost")
+print("-----------------")
 while it < 300000:
 
     images = np.random.randn(BATCH_SIZE, 784) * 0.1
@@ -118,7 +149,10 @@ while it < 300000:
     for i in range(BATCH_SIZE):
         x = np.random.randint(train_len)
         labels[i][training_data[0][x]] = -1
-        images[i] += training_data[1][x]
+        image = training_data[1][x]
+        if elastic:
+            image = elastic_distortion(image)
+        images[i] = image.flatten()
 
     # Function finds weight derivatives, bias derivatives and cost
     wd, bd, cost = batch_fwd_backprop(weights, biases, images, l, labels)
@@ -126,17 +160,14 @@ while it < 300000:
     if it > 100:
         if cost_per_image > 4:
             break
-    if it % 1000 == 999:
-        print(it, np.round(cost_per_image, 4), "   ",
-              np.round(np.std(weights[0]), 4),
-              np.round(np.std(weights[1]), 4),
-              np.round(np.std(weights[2]), 4))
+    if it % 100 == 99:
+        print("{:>9} | {:5.3f}".format(it, cost_per_image))
     costs.append(cost_per_image)
 
-    if ADAM:
+    if adam:
         # Adam optimizer for weights and biases
-        adam(weights, wd, mws, vws, it)
-        adam(biases, bd, mbs, vbs, it)
+        adam_optimise(weights, wd, mws, vws, it)
+        adam_optimise(biases, bd, mbs, vbs, it)
     else:
         # Linear optimizer for weights and biases
         weights = [a - K * b for a, b in zip(weights, wd)]

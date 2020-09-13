@@ -1,4 +1,5 @@
-from scipy import signal
+from scipy import signal, interpolate
+from scipy.ndimage import gaussian_filter
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import expit
@@ -9,8 +10,8 @@ os.chdir("c://Users/isaac/Documents/PycharmProjects")
 
 # Convolutional neural network architecture class with learning method
 class Convolutional_NN:
-    def __init__(self, batch_size, filter_sizes, kernel_sizes, fc_layers,
-                 learning_rate, iterations, regular_coef=0.0, adam=False):
+    def __init__(self, batch_size, filter_sizes, kernel_sizes, fc_layers, learning_rate,
+                 iterations, regular_coef=0.0, adam=False, elastic=False):
         self.b_size = batch_size
         self.f_sizes = filter_sizes
         self.k_sizes = kernel_sizes
@@ -19,6 +20,10 @@ class Convolutional_NN:
         self.its = iterations
         self.reg = regular_coef
         self.adam = adam
+        self.elastic = elastic
+        if self.elastic:
+            self.elastic_u_rng = 3
+            self.elastic_sigma = 18
         if self.adam:
             self.b1 = 0.9
             self.b2 = 0.999
@@ -166,9 +171,36 @@ class Convolutional_NN:
         for i in range(self.b_size):
             x = np.random.randint(num_train)
             labels[i][training_data[0][x]] = -1
-            batch[i] = training_data[1][x].reshape(28, 28)
+            image = training_data[1][x].reshape(28, 28)
+            if self.elastic:
+                image = self.elastic_distortion(image)
+            batch[i] = image
 
         return labels, batch
+
+
+    # Elastically distorts image to create new training data
+    def elastic_distortion(self, image):
+
+        # Create random filtered arrays and adds to square grid
+        x_random_array = self.elastic_u_rng * (np.random.rand(28, 28) - 0.5)
+        x_smoothed_array = gaussian_filter(x_random_array, sigma=self.elastic_sigma)
+        xs = np.array([np.arange(28), ] * 28) + x_smoothed_array
+        y_random_array = self.elastic_u_rng * (np.random.rand(28, 28) - 0.5)
+        y_smoothed_array = gaussian_filter(y_random_array, sigma=self.elastic_sigma)
+        ys = np.array([np.arange(28), ] * 28) + y_smoothed_array
+
+        # Interpolate known image with random points to produce new image
+        x = y = np.arange(28)
+        f = interpolate.RectBivariateSpline(x, y, image)
+        image = np.array(f.ev(ys, xs))
+
+        # Normalise new image
+        image[image < 0] = 0
+        image -= np.min(image)
+        image *= 1/np.max(image)
+
+        return image
 
 
     def fwd_backprop(self, labels, batch, params):
@@ -289,15 +321,15 @@ class Convolutional_NN:
 def cnn_forward(input_tensor, filt, depth_filt):
 
     # Depthwise seperable convolution
-    conv = np.array([signal.convolve(fm, k ,mode='valid')
-                    for fm, k in zip(input_tensor, filt)])
+    conv = np.array([signal.convolve(fm, k, mode='valid')
+                     for fm, k in zip(input_tensor, filt)])
     y = np.einsum('ij,jklm->iklm', depth_filt, conv)
 
     # ReLU and max-pooling, caching the activation tensors
     relu = y*(y>0.001)
     a, b, M, N = relu.shape
-    mxpl = relu.reshape(a, b, M//2, 2, N//2, 2).max(axis=(3,5))
-    activ = np.repeat(np.repeat(mxpl,2,axis=2),2,axis=3) == y
+    mxpl = relu.reshape(a, b, M//2, 2, N//2, 2).max(axis=(3, 5))
+    activ = np.repeat(np.repeat(mxpl, 2, axis=2), 2, axis=3) == y
 
     return conv, mxpl, activ
 
@@ -313,11 +345,11 @@ def cnn_backward(conv_deriv, activ, conv, depth_filt, input_tensor, filt):
         output_deriv = conv_deriv
 
     # Find depthwise filter and seperable filter derivatives
-    y_derivs = np.repeat(np.repeat(output_deriv,2,axis=2),2,axis=3) * activ
+    y_derivs = np.repeat(np.repeat(output_deriv, 2, axis=2), 2, axis=3) * activ
     depth_deriv = np.einsum('iklm,jklm->ji', conv, y_derivs)
     conv_deriv = np.einsum('ij,iklm->jklm', depth_filt, y_derivs)
     filt_deriv = np.array([np.rot90(signal.correlate(fm, cd, 'valid', 'direct'), 2, (1, 2))
-                    for fm, cd in zip(input_tensor, conv_deriv)])
+                           for fm, cd in zip(input_tensor, conv_deriv)])
 
     return depth_deriv, conv_deriv, filt_deriv
 
@@ -352,5 +384,13 @@ def fcnn_backward(output_mat, input_mat, output_derivs, sgmd, weights=False):
     return input_derivs, weight_derivs
 
 
-nn1 = Convolutional_NN(64, (8, 16), (5, 5), (256, 256, 47), 10 ** -3, 100, adam=True)
+nn1 = Convolutional_NN(batch_size=64,
+                       filter_sizes=(8, 16),
+                       kernel_sizes=(5, 5),
+                       fc_layers=(256, 256, 47),
+                       learning_rate=10 ** -3,
+                       iterations=1000,
+                       regular_coef=0.0,
+                       adam=True,
+                       elastic=False)
 nn1.learn()
