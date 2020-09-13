@@ -122,16 +122,16 @@ class Convolutional_NN:
     def initialise_parameters(self):
         sep_filts = []
         dep_filts = []
-        f = self.f_sizes
-        k = self.k_sizes
+        fs = self.f_sizes
+        ks = self.k_sizes
         l = self.layers
-        if f:
-            sep_filts.append(0.25 * np.random.randn(f[0], k[0], k[0])[:, None, :, :])
-            dep_filts.append(np.identity(f[0]))
-        if len(f) > 1:
-            for f, k in zip(f[:-1], k[1:]):
+        if fs:
+            sep_filts.append(0.25 * np.random.randn(fs[0], ks[0], ks[0])[:, None, :, :])
+            dep_filts.append(np.identity(fs[0]))
+        if len(fs) > 1:
+            for f, k in zip(fs[:-1], ks[1:]):
                 sep_filts.append(0.25 * np.random.randn(f, k, k)[:, None, :, :])
-            for a, b in zip(f[1:], f[:-1]):
+            for a, b in zip(fs[1:], fs[:-1]):
                 dep_filts.append(1 * np.random.randn(a, b))
         weights = [0.25 * np.random.randn(a, b) for a, b in zip(l[1:], l[:-1])]
         biases = [np.zeros(a) for a in l[1:]]
@@ -148,8 +148,8 @@ class Convolutional_NN:
 
         if self.adam:
             for p in params["cnn"]:
-                params["cnn"][p]["momentum"] = [0] * len(f)
-                params["cnn"][p]["energy"] = [0] * len(f)
+                params["cnn"][p]["momentum"] = [0] * len(fs)
+                params["cnn"][p]["energy"] = [0] * len(fs)
             for p in params["fcnn"]:
                 params["fcnn"][p]["momentum"] = [0] * (len(l) - 1)
                 params["fcnn"][p]["energy"] = [0] * (len(l) - 1)
@@ -316,7 +316,7 @@ def cnn_backward(conv_deriv, activ, conv, depth_filt, input_tensor, filt):
     y_derivs = np.repeat(np.repeat(output_deriv,2,axis=2),2,axis=3) * activ
     depth_deriv = np.einsum('iklm,jklm->ji', conv, y_derivs)
     conv_deriv = np.einsum('ij,iklm->jklm', depth_filt, y_derivs)
-    filt_deriv = np.array([np.rot90(signal.correlate(fm, cd, 'valid'), 2, (1, 2))
+    filt_deriv = np.array([np.rot90(signal.correlate(fm, cd, 'valid', 'direct'), 2, (1, 2))
                     for fm, cd in zip(input_tensor, conv_deriv)])
 
     return depth_deriv, conv_deriv, filt_deriv
@@ -352,5 +352,5 @@ def fcnn_backward(output_mat, input_mat, output_derivs, sgmd, weights=False):
     return input_derivs, weight_derivs
 
 
-nn1 = Convolutional_NN(64, (8, 16), (5, 5), (256, 256, 47), 10 ** -3, 1000, adam=True)
+nn1 = Convolutional_NN(64, (8, 16), (5, 5), (256, 256, 47), 10 ** -3, 100, adam=True)
 nn1.learn()
