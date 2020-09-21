@@ -13,24 +13,30 @@ def batch_fwd_backprop(weights, biases, inputs, l, y):
 
     y = y.T    # Transpose real vector
     vals = [inputs.T]   # Creates list of nn values
+    sigmas = []
+    vals_hat = []
     
     # Iterates forward through layers
     i = 1
     while i < l:
         
         # Linear algebra
-        ith_layer = weights[i-1] @ vals[-1] + biases[i-1][:,None]
+        ith_layer = weights[i-1] @ vals[-1] + biases[i-1][:, None]
         
         # Softmax if final layer, logistic function otherwise
         if i == l - 1:
             ith_layer = np.exp(ith_layer) / np.sum(np.exp(ith_layer), axis=0)
-            cost = np.sum(y * np.log(ith_layer))
+            vals.append(ith_layer)
         else:
             ith_layer = expit(ith_layer)
-        
-        # Adds layer values to list
-        vals.append(ith_layer)
+            vals.append(ith_layer)
+            if BN:
+                sigma = np.std(ith_layer, axis=1)[:, None]
+                sigmas.append(sigma)
+                ith_layer = (ith_layer - np.average(ith_layer, axis=1)[:, None]) / sigma
+                vals_hat.append(ith_layer)
         i += 1
+    cost = np.sum(y * np.log(ith_layer))
 
     wt_derivs = []   # List of arrays of derivatives of weights
     bs_derivs = []   # List of arrays of derivatives of biases
@@ -42,7 +48,10 @@ def batch_fwd_backprop(weights, biases, inputs, l, y):
         if i == 0:
             b = vals[-i - 1] + y
         else:
-            b = vals[-i - 1] * (1 - vals[-i - 1]) * (weights[l - i - 1].T @ b)
+            b = weights[l - i - 1].T @ b
+            if BN:
+                b = ((BATCH_SIZE*b) - np.sum(b, axis=1)[:, None] - (vals_hat[-i]*np.einsum('ij,ij->i', vals_hat[-i], b)[:, None])) / (BATCH_SIZE*sigmas[-i])
+            b = vals[-i - 1] * (1 - vals[-i - 1]) * b
 
         # Weight derivs are matrix product of bias (output) derivs and input matrix transposed
         w = b @ vals[-i - 2].T
@@ -110,7 +119,7 @@ train_len = len(training_data[0])
 
 # Hyperparameters
 layers = [784, 256, 256, 47]  # Dimensions of the neural network
-s = [0, 0.3, 0.3]   # Layers' starting standard deviation
+s = [0.3, 0.3, 0.3]   # Layers' starting standard deviation
 K = 10 ** -3   # Learning rate
 REG = 10 ** -5   # Regularization coefficient
 BATCH_SIZE = 64   # Batch size
@@ -121,76 +130,78 @@ adam = True
 elastic = False
 ELASTIC_U_RANGE = 3
 ELASTIC_SIGMA = 18
+BN = True
 
 # Initialization
 figure_1, ax_1 = plt.subplots(1)
-l = len(layers)
-costs = []
-weights = []
-biases = []
-for i in range(l-1):
-    weights.append(np.random.randn(layers[i+1], layers[i]) * s[i])
-    biases.append(np.zeros(layers[i+1]))
-mws = [0] * (l-1)   # Weight momenta
-vws = [0] * (l-1)   # Weight second moments
-mbs = [0] * (l-1)   # Bias momenta
-vbs = [0] * (l-1)   # Bias second moments
+for BN in [True, False]:
+    l = len(layers)
+    costs = []
+    weights = []
+    biases = []
+    for i in range(l-1):
+        weights.append(np.random.randn(layers[i+1], layers[i]) * s[i])
+        biases.append(np.zeros(layers[i+1]))
+    mws = [0] * (l-1)   # Weight momenta
+    vws = [0] * (l-1)   # Weight second moments
+    mbs = [0] * (l-1)   # Bias momenta
+    vbs = [0] * (l-1)   # Bias second moments
 
-# Main loop
-it = 0
-print("iteration |  cost")
-print("-----------------")
-while it < 300000:
+    # Main loop
+    it = 0
+    print("iteration |  cost")
+    print("-----------------")
+    while it < 2000:
 
-    images = np.random.randn(BATCH_SIZE, 784) * 0.1
-    labels = np.zeros((BATCH_SIZE, 47))
+        images = np.random.randn(BATCH_SIZE, 784) * 0.1
+        labels = np.zeros((BATCH_SIZE, 47))
 
-    # Choose images randomly
-    for i in range(BATCH_SIZE):
-        x = np.random.randint(train_len)
-        labels[i][training_data[0][x]] = -1
-        image = training_data[1][x]
-        if elastic:
-            image = elastic_distortion(image)
-        images[i] = image.flatten()
+        # Choose images randomly
+        for i in range(BATCH_SIZE):
+            x = np.random.randint(train_len)
+            labels[i][training_data[0][x]] = -1
+            image = training_data[1][x]
+            if elastic:
+                image = elastic_distortion(image)
+            images[i] = image.flatten()
 
-    # Function finds weight derivatives, bias derivatives and cost
-    wd, bd, cost = batch_fwd_backprop(weights, biases, images, l, labels)
-    cost_per_image = cost / BATCH_SIZE
-    if it > 100:
-        if cost_per_image > 4:
-            break
-    if it % 100 == 99:
-        print("{:>9} | {:5.3f}".format(it, cost_per_image))
-    costs.append(cost_per_image)
+        # Function finds weight derivatives, bias derivatives and cost
+        wd, bd, cost = batch_fwd_backprop(weights, biases, images, l, labels)
+        cost_per_image = cost / BATCH_SIZE
+        if it > 100:
+            if cost_per_image > 4:
+                break
+        if it % 100 == 99:
+            print("{:>9} | {:5.3f}".format(it, cost_per_image))
+        costs.append(cost_per_image)
 
-    if adam:
-        # Adam optimizer for weights and biases
-        adam_optimise(weights, wd, mws, vws, it)
-        adam_optimise(biases, bd, mbs, vbs, it)
-    else:
-        # Linear optimizer for weights and biases
-        weights = [a - K * b for a, b in zip(weights, wd)]
-        biases = [a - K * b for a, b in zip(biases, bd)]
+        if adam:
+            # Adam optimizer for weights and biases
+            adam_optimise(weights, wd, mws, vws, it)
+            #adam_optimise(biases, bd, mbs, vbs, it)
+        else:
+            # Linear optimizer for weights and biases
+            weights = [a - K * b for a, b in zip(weights, wd)]
+            #biases = [a - K * b for a, b in zip(biases, bd)]
 
-    it += 1
+        it += 1
 
-# Plots descent
-xs = np.linspace(0, it-1, it)
-#ax_1.scatter(xs, costs, marker='.')
-ax_1.plot(xs, gaussian_filter(costs, sigma=100))
-ax_1.set_xlim(10, 1000000)
-ax_1.set_xscale('log')
-ax_1.set_ylim(0.01, 4)
-ax_1.set_yscale('log')
-#plt.show()
+    # Plots descent
+    xs = np.linspace(0, it-1, it)
+    #ax_1.scatter(xs, costs, marker='.')
+    ax_1.plot(xs, gaussian_filter(costs, sigma=100))
+    ax_1.set_xlim(10, 100000)
+    ax_1.set_xscale('log')
+    ax_1.set_ylim(0.01, 4)
+    ax_1.set_yscale('log')
+    #plt.show()
 
-# Plots pixel activations for first layer
-fig, axs = plt.subplots(8, 8)
-std = np.std(weights[0])
-clr_rng = 2 * std
-for im in range(64):
-    sq_wts = np.reshape(weights[0][im], (-1, 28))
-    axs[im // 8, im % 8].imshow(sq_wts, cmap="bwr", vmin=-clr_rng, vmax=clr_rng)
-    axs[im // 8, im % 8].axis('off')
+    # Plots pixel activations for first layer
+    fig, axs = plt.subplots(8, 8)
+    std = np.std(weights[0])
+    clr_rng = 2 * std
+    for im in range(64):
+        sq_wts = np.reshape(weights[0][im], (-1, 28))
+        axs[im // 8, im % 8].imshow(sq_wts, cmap="bwr", vmin=-clr_rng, vmax=clr_rng)
+        axs[im // 8, im % 8].axis('off')
 plt.show()
