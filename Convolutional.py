@@ -141,7 +141,8 @@ class Convolutional_NN:
         weights = [0.25 * np.random.randn(a, b) for a, b in zip(l[1:], l[:-1])]
         biases = [np.zeros(a) for a in l[1:]]
 
-        params = {"cnn": {
+        params = {
+            "cnn": {
                 "sep_filts": {"values": sep_filts},
                 "dep_filts": {"values": dep_filts}
             },
