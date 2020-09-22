@@ -17,3 +17,5 @@ The EMNIST database of numbers can be downloaded at https://www.kaggle.com/crawf
 * In `Convolutional.py` and `FullyConnected.py` change the file directory to be the same as in `EMNIST_Data.py`
 
 `Convolutional.py` and `FullyConnected.py` are now ready to run.
+
+`Speed_Test.py` is used to compare the single threaded CPU performance of computers at matrix multiplication
