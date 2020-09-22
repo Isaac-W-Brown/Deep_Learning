@@ -1,9 +1,9 @@
 # Deep_Learning
-Deep learning for computer vision of numbers and letters
+Deep learning for computer vision of numbers and letters. All the code in this repository is my own and from scratch. Please read `Deep_Learning.pdf` to see my methodology, findings and conclusions.
 
 
 ## EMNIST database
-The EMNIST database of numbers can be downloaded at https://www.kaggle.com/crawford/emnist. Download emnist-balanced-test.csv and emnist-balanced-train.csv - these have equal numbers of each class of character. Save these into the same folder and note the file path.
+The EMNIST database of numbers can be downloaded at https://www.kaggle.com/crawford/emnist. Download `emnist-balanced-test.csv` and `emnist-balanced-train.csv` - these have equal numbers of each class of character. Save these into the same folder and note the file path.
 
 ## Set Up 
 * Download the repository
@@ -18,4 +18,4 @@ The EMNIST database of numbers can be downloaded at https://www.kaggle.com/crawf
 
 `Convolutional.py` and `FullyConnected.py` are now ready to run.
 
-`Speed_Test.py` is used to compare the single threaded CPU performance of computers at matrix multiplication
+`Speed_Test.py` is used to compare the single threaded CPU performance of computers at matrix multiplication.
